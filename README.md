@@ -1,4 +1,4 @@
-# Auto-website-hosting 
+# Auto-website-hosting using AWS-CLI
 This is a part of my personal project in the process of learning AWS DevOps Engineering 
 
 ## Project Overview 
