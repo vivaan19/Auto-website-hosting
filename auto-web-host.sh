@@ -40,32 +40,74 @@ cmd : aws ec2 describe-instances
 
 if ! ping www.google.com &>/dev/null; then
 
-	echo ERROR1: INTERNET NOT CONNECTED
+	echo "WARNING ################### INTERNET NOT CONNECTED"
 	exit 1
 
 else
 
-	PROFILE="/home/$(whoami)/.profile"
+	echo "INFO ################### SUCCESS INTERNET IS CONNECTED"
+
+	which jq &> /dev/null
+
+	if [ $? -ne 0 ]; then
+		sudo apt install jq -y
+	fi
+
+	# EXPORT YOUR DEFAULT REGION, ACCESS KEY AND SECRET ACCESS KEY IN .profile file 
+	
+	: '
+
+		IN THIS FORMAT :: 
+
+		export AWS_DEFAULT_REGION=us-east-1
+		export AWS_ACCESS_KEY_ID=AKIAUJ6NBCEXAMPLE
+		export AWS_SECRET_ACCESS_KEY=D/tYoLYyvHZqEXAMPLE
+
+	
+	'
+
+	PROFILE="$HOME/.profile"
+	
 	source "$PROFILE"
 
+	# AFTER BEING SOURCED SCRIPT WILL BR USING THE CONFIGURATIONS AS MENTIONED 
 fi
 
-################### GLOBAL VARIABLES #################################
+################### SCRIPT CONSTANTS #################################
 
+# NEW KEY-PAIR NAME WILL BE IN THE FORMAT OF kp-$RANDOM 
+# RANDOM WILL HAVE VALUES RANGING FROM 0 to 32767  
 KP_NAME='kp-'$RANDOM
 
 KP_FILE=$KP_NAME'.pem'
 
 KP_DIR="aws_kp_dir"
 
+SEC_GRP_NAME='sec_grp-'$RANDOM
+
+TMP_FILE="/tmp/sec-grp.json"
+
+USER="ubuntu" 
+
+
 #######################################################################
 
 
 ################# FUNCTION TO CREATE NEW INSTANCE ###########################
 
+: '
+
+	FUNCTION STEPS : 
+
+	1. CHECK ATLEAST ONE KEY-PAIR FROM AWS IS PRESENT IN THE SYSTEM  
+
+	2. 
+
+'
+
 newIns() {
 
-	echo "SECURITY GROUP CREATION WITH TCP 80 IPV4/V6 EVERYWHERE and KEY PAIR FILE my-key-pair.pem ....."
+	echo "INFO ################### NEW INSTANCE PROCESS STARTING ... "
 
 	############ CREATING AND CHECKING FOR EXISTING KEY-PAIR #####################
 
@@ -75,15 +117,18 @@ newIns() {
 	# CHECK IF PEM FILE DIRECTORY EXISTS
 
 	if [ -d "/var/$KP_DIR" ]; then
+		
+		######### CHECK IF KP EXISTS IN SYSTEM ##########
 
-		echo "INFO ################### KEY-PAIR DIR EXIST"
+		echo "INFO ################### KEY-PAIR DIRECTORY EXISTS"
 
-		######### CHECK IF KP EXISTS IN SYSTEM DON'T NEED TO MAKE EXTRA KP  ##########
+		
 		# CONVERTING JSON ARRAY OBJECT TO BASH OBJECT
-
 		EXISTING_KP=$(aws ec2 describe-key-pairs --query 'KeyPairs[*].KeyName' | jq -r '.[]')
 
 		EXISTING_KP_NAME="none"
+
+		echo "INFO ################### CHECKING ATLEAST ONE VALID KEY-PAIR IS PRESENT"
 
 		for element1 in $EXISTING_KP; do
 
@@ -91,9 +136,13 @@ newIns() {
 
 				if [[ "$element1" == "$(echo "$element2" | cut -d "." -f1)" ]]; then
 
+					echo "INFO ################### VALID KEY-PAIR IS PRESENT IN THE SYSTEM"
+
 					EXISTING_KP_NAME=$element1
 
 					KP_NAME=$EXISTING_KP_NAME
+
+					break
 
 				fi
 			done
@@ -102,43 +151,58 @@ newIns() {
 		# IF KEY-PAIR DOES'T EXIST THEN MAKE ANOTHER KEY-PAIR
 
 		if [[ "$EXISTING_KP_NAME" == "none" ]]; then
+			
+			echo "INFO ################### VALID KEY-PAIR IS NOT PRESENT IN THE SYSTEM"
+
+			echo "INFO ################### CREATING NEW KEY-PAIR AND ADDING IN KEY-PAIR DIRECTORY"
 
 			aws ec2 create-key-pair --key-name "$KP_NAME" --key-type rsa --key-format pem  --query 'KeyMaterial' --output text | sudo tee /var/$KP_DIR/$KP_FILE > /dev/null
 
 		fi
 
 	else
-		echo "INFO ################### KEY-PAIR DIR DOES NOT EXIST"
+		echo "INFO ################### KEY-PAIR DIRECTORY DOES NOT EXIST IN THE SYSTEM"
 
 		############## MAKE DIRECTORY AND KEY-PAIR #############
+
+		echo "INFO ################### MAKING KEY-PAIR DIRECTORY AND ADDING A VALID KEY-PAIR"
 
 		sudo mkdir /var/$KP_DIR
 
 		aws ec2 create-key-pair --key-name $KP_NAME --key-type rsa --key-format pem --query 'KeyMaterial' --output text | sudo tee /var/$KP_DIR/$KP_FILE > /dev/null
 	fi
 
-	echo ">>>>>>>>>>>>>>>> KEY-PAIR DETAILS" 
+	echo "INFO ################### KEY-PAIR DETAILS"
+	
+	echo "INFO ################### KEY-PAIR NAME - $KP_NAME"
+	
+	echo "INFO ################### KEY-PAIR LOCATION - /var/$KP_DIR/$KP_NAME.pem"
 
-	echo "KEY-PAIR NAME - $KP_NAME ; KEY-PAIR LOCATION - /var/$KP_DIR/$KP_NAME.pem"
+	echo "INFO ################### GRANTING KEY READ ONLY PERMISSION TO OWNER FOR AUTO-SSH"
 
 	sudo chmod 400 /var/$KP_DIR/"$KP_NAME".pem
 
+	echo "INFO ################### KEY-PAIR DONE"
+
+	echo "==================================================================================="
 	
 	#####################################################
 	############ CREATING SECURITY GROUP ################
 	#####################################################
 
-	SEC_GRP_NAME='sec_grp-'$RANDOM
+	echo "INFO ################### SECURITY GROUP CREATION OR ALLOCATION"
 
-	# Determine length of security group array
+	# DETERMINE LENGTH OF SECURITY GROUP ARRAY
 
 	SEC_GRP_LEN=$(aws ec2 describe-security-groups | jq '.SecurityGroups | length')
 
 	if [ "$SEC_GRP_LEN" -eq 1 ]; then
 
-		echo "INFO ################### SEC-GRP DOES NOT EXIST"
+		echo "INFO ################### CUSTOM SECURITY GROUP DOES NOT EXIST"
 
 		# MAKE SECURITY GROUP
+
+		echo "INFO ################### MAKING CUSTOM SECURITY GROUP"
 
 		SEC_GRP_ID=$(aws ec2 create-security-group --group-name $SEC_GRP_NAME --description "custom script security group" | jq '.GroupId')
 
@@ -146,6 +210,9 @@ newIns() {
 		# PROVIDE TCP PORT 80 IPV4/V6 EVERYWHERE
 
 		SEC_GRP_FORMAT=$(echo "$SEC_GRP_ID" | cut -d '"' -f2)
+
+
+		echo "INFO ################### PROVIDING INGRESS RULES"
 
 		# SSH
 		aws ec2 authorize-security-group-ingress --group-id "$SEC_GRP_FORMAT" --protocol tcp --port 22 --cidr 0.0.0.0/0
@@ -161,16 +228,19 @@ newIns() {
 		# REDIRECT DEC-SEC-GRP RESPOSE TO TEMP JSON FILE THEN PROCESS THAT FILE THROUGH JQ
 		# CHECK IF ALREADY A SEC-GRP EXISTS WHICH HAS SAME INGRESS RULES
 
-		echo "INFO ################### SEC-GRP EXISTS "
-
-		TMP_FILE="/tmp/sec-grp.json"
+		echo "INFO ################### CUSTOM SECURITY GROUP EXISTS "
 
 		touch $TMP_FILE
 		
 		# CONVERTING INTO JSON AND STORING IN TMP_FILE 
+
+		echo "INFO ################### STORING RESPONSE IN TMP_FILE FOR FASTER PROCESSING"
+
 		aws ec2 describe-security-groups | jq '.[]' > $TMP_FILE
 
 		CHK_EXIST=false
+
+		echo "INFO ################### CHECKING FOR VALID SECURITY GROUP"
 
 		# MAIN LOOP
 		for ((i = 0; i < $(jq '. | length' "$TMP_FILE"); i++)); do
@@ -187,6 +257,8 @@ newIns() {
 
 				if [[ "$FROM_PORT" == 80 && "$IP_PROTO" == '"tcp"' && "$IP_V4" == '"0.0.0.0/0"' && "$IP_V6" == '"::/0"' ]]; then
 
+					echo "INFO ################### VALID SECURITY GROUP EXISTS"
+
 					SEC_GRP_ID=$(jq ".[$i].GroupId" $TMP_FILE)
 					
 					SEC_GRP_FORMAT=$(echo "$SEC_GRP_ID" | cut -d '"' -f2)
@@ -202,6 +274,10 @@ newIns() {
 		done
 	
 		if [ "$CHK_EXIST" == "false" ]; then
+			
+			echo "INFO ################### VALID SECURITY GROUP DOES NOT EXISTS"
+
+			echo "INFO ################### MAKING VALID SECURITY GROUP"
 
 			SEC_GRP_ID=$(aws ec2 create-security-group --group-name $SEC_GRP_NAME --description "custom script security group" | jq '.GroupId')
 
@@ -220,10 +296,14 @@ newIns() {
 
 	fi
 	
-	echo ">>>>>>>>>>>>>>>>>>> SECURITY GROUP ID - $SEC_GRP_FORMAT"
+	echo "INFO ################### VALID SECURITY GROUP ID - $SEC_GRP_FORMAT"
 
-	echo "################# INFO CREATING Ubuntu Server 22.04 LTS"
+	echo "INFO ################### SECURITY GROUP PROCESS DONE"
 
+	echo "==================================================================================="
+	
+	echo "INFO ################### CREATING UBUNTU SERVER 22.04 LTS"
+	
 	############ CREATE NEW INSTANCE AFTER ALL VALIDATION ############### 
 	############ AMI - Ubuntu Server 22.04 LTS (HVM), SSD Volume Type x86 
 	######################################################################
@@ -242,39 +322,39 @@ newIns() {
 
 	if [[ $? -eq 0 ]]; then 
 
-		echo "################# INFO SERVER CREATED SUCCESSFULLY"
-		echo "################# SERVER ID :: $INS_ID"
+		echo "INFO ################### UBUNTU SERVER 22.04 LTS SERVER CREATED SUCCESSFULLY"
+
+		echo "INFO ################### SERVER INSTANCE ID - $INS_ID"
 
 	else 
 
-		echo "################# ERROR2 SERVER NOT ABLE TO CREATE"
+		echo "ERROR ################### SERVER NOT ABLE TO CREATE"
 		exit 2 
 	fi
+
+	echo "==================================================================================="
 
 }
 
 processInstallation() {
 
+
+	echo "INFO ################### PROCESS INSTALLATION STARTING"
+
 	FOR_INS_ID=$(echo "$1" | cut -d '"' -f2)
 
-	echo "Formatted INS ID ---- $FOR_INS_ID"
-
-	USER="ubuntu" 
-	
 	HOST=$(aws ec2 describe-instances --instance-ids "$FOR_INS_ID" | jq '.Reservations[].Instances[].PublicDnsName' | cut -d '"' -f2)
-	
-	echo "Host ---- $HOST"
 
 	KEY="/var/$KP_DIR/$2.pem"
-	
-	echo "Key ---- $KEY"
 
 	LINK_FILE="link_file.txt"
 
 	BASH_FILE="commands.sh"
 
-
+	echo "INFO ################### TARGET INSTANCE-ID - $FOR_INS_ID TARGET HOST - $HOST TARGET KEY - $KEY"
+	
 	############# ASK USER WHICH WEBSITE TO HOST #############
+	echo ""
 
 while true; do
 
@@ -294,64 +374,51 @@ while true; do
 
 EOF
 
-    read -p "Enter your choice (1-5): " choice
+    read -p "ENTER YOUR CHOICE (1-5): " choice
 
     case $choice in
         1)
-            echo "You selected CAFE WEBSITE."
-            # Add your code for hosting CAFE WEBSITE here
-
+            echo "YOU SELECTED CAFE WEBSITE."
 			echo "https://www.tooplate.com/zip-templates/2137_barista_cafe.zip" > $LINK_FILE
-
             break
             ;;
         2)
-            echo "You selected MINI FINANCE."
-            # Add your code for hosting MINI FINANCE here
-
+            echo "YOU SELECTED MINI FINANCE."
 			echo "https://www.tooplate.com/zip-templates/2135_mini_finance.zip" > $LINK_FILE
             break
             ;;
         3)
-            echo "You selected WEDDING LITE."
-            # Add your code for hosting WEDDING LITE here
-
+            echo "YOU SELECTED WEDDING LITE."
 			echo "https://www.tooplate.com/zip-templates/2131_wedding_lite.zip" > $LINK_FILE
             break
             ;;
         4)
-            echo "You selected MOSO INTERIOR."
-            # Add your code for hosting MOSO INTERIOR here
-
+            echo "YOU SELECTED MOSO INTERIOR."
 			echo "https://www.tooplate.com/zip-templates/2133_moso_interior.zip" > $LINK_FILE
 
             break
             ;;
         5)
-            echo "You selected JOB SEARCH."
-            # Add your code for hosting JOB SEARCH here
-
+            echo "YOU SELECTED JOB SEARCH."
 			echo "https://www.tooplate.com/zip-templates/2134_gotto_job.zip" > $LINK_FILE
 
             break
             ;;
         *)
-            echo "Invalid choice. Please enter a number between 1 and 5."
+            echo "WARNING ################### INVALID CHOICE. PLEASE ENTER A NUMBER BETWEEN 1 AND 5."
             ;;
     esac
 done
+
+echo "INFO ################### CREATING COMMANDS WHICH CAN BE EXECUTED IN REMOTE MACHINE"
 
 cat << EOF > $BASH_FILE
 
 #!/bin/bash
 
-sudo apt update -y ; sudo apt upgrade -y
+if [ -e /opt/build_file.txt ]; then
 
-sudo apt install apache2 zip unzip -y
-
-sudo systemctl start apache2 
-
-sudo systemctl enable apache2
+# MAIN PROCESS 
 
 curl -O $(cat $LINK_FILE)
 
@@ -363,49 +430,88 @@ sudo rsync -av --remove-source-files $(cat $LINK_FILE | cut -d "/" -f5 | cut -d 
 
 sudo systemctl restart apache2 
 
+# CLEANING 
+
 rm -rf $(cat $LINK_FILE | cut -d "/" -f5)
 
 rm -rf $(cat $LINK_FILE | cut -d "/" -f5 | cut -d "." -f1)
 
 rm -rf $LINK_FILE
 
+else
+
+# SYSTEM UPDATION AND APACHE2 SERVER INSTALLATION 
+
+sudo apt update -y ; sudo apt upgrade -y
+
+sudo apt install apache2 zip unzip -y
+
+sudo systemctl start apache2 
+
+sudo systemctl enable apache2
+
+# MAIN PROCESS 
+
+curl -O $(cat $LINK_FILE)
+
+unzip $(cat $LINK_FILE | cut -d "/" -f5)
+
+sudo rm -rf /var/www/html/*
+
+sudo rsync -av --remove-source-files $(cat $LINK_FILE | cut -d "/" -f5 | cut -d "." -f1)/* /var/www/html/
+
+sudo systemctl restart apache2 
+
+# CLEAN-UP
+
+rm -rf $(cat $LINK_FILE | cut -d "/" -f5)
+
+rm -rf $(cat $LINK_FILE | cut -d "/" -f5 | cut -d "." -f1)
+
+rm -rf $LINK_FILE
+
+touch /opt/build_file.txt
+
+fi
+
 EOF
 
+	echo "INFO ################### TRYING TO TRANSFER FILES THROUGH SSH SCP"
 
 	scp_count=0
 
 	while true; do
 
-		sudo scp -o BatchMode=yes -o StrictHostKeyChecking=no -i "$KEY" $LINK_FILE $BASH_FILE $USER@"$HOST":~/ 2> /dev/null 
+		sudo scp -o BatchMode=yes -o StrictHostKeyChecking=no -i "$KEY" $LINK_FILE $BASH_FILE $USER@"$HOST":~/ > /dev/null 
 		
 		if [[ $? -eq 0 ]]; then 
 
-			echo "FILE TRANSFERRED SUCCESSFULLY"
+			echo "INFO ################### FILES TRANSFERRED SUCCESSFULLY"
 
 			break
 		fi
 
 		if [[ $scp_count -eq 10 ]]; then 
 
-			echo "ERROR3: LINK FILE CANNOT BE TRANSFERRED"
-
-			break
+			echo "ERROR ################### FILES CANNOT BE TRANSFERRED"
+			exit 1
 		fi
 		
 		((scp_count++))
 
 	done
 
-	
-	
+	# BASH FILE CLEAN-UP 
+	sudo rm -rf $BASH_FILE $LINK_FILE
 
-	########### HERE WE WILL GET INSTANCE ID ############ 
-	# 1. SSH INTO THE MACHINE THROUGH PEM KEY
-	# 2. AND EXECUTE COMMANDS 
+########### HERE WE WILL GET INSTANCE ID ############ 
+# 1. SSH INTO THE MACHINE THROUGH PEM KEY
+# 2. AND EXECUTE COMMANDS THROUGH BASH FILE WHICH IS TRANSFERRED
 
+echo "INFO ################### TRYING TO SSH INTO MACHINE AND EXECUTING COMMANDS"
+
+echo "INFO ################### PLEASE BE PATIENT AS THIS PROCESS MAY TAKE FEW MINUTES ..... "
 	
-while true; do
-
 sudo ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i "$KEY" $USER@"$HOST" << EOF > /dev/null 2>&1
 
 sudo chmod u+x $BASH_FILE
@@ -413,17 +519,9 @@ sudo chmod u+x $BASH_FILE
 
 EOF
 
-	if [ $? -eq 0 ]; then
-		echo "SITE HOSTED SUCCESSFULLY"
-		break
-	fi
-
-	done
-
 	PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$FOR_INS_ID" | jq '.Reservations[].Instances[].PublicIpAddress')
 
-	echo "ACCESS YOUR WEBSITE USING THIS IP ========= $PUBLIC_IP"
-
+	echo "INFO ################### PLEASE ACCESS YOUR WEBSITE AT - $PUBLIC_IP"
 
 }
 
@@ -435,16 +533,18 @@ EOF
 #   ELSE THEN CREATE A NEW VM AND DO THE FURTHER PROCESS 
 ############## NOW CREATE INSTANCE WITH THE ABOVE DETAILS ################ 
 
-# CHECK NUMBER OF INSTANCES 
+# CHECK NUMBER OF RUNNING AND STOPPED INSTANCES 
 
 INS_NUM=$(aws ec2 describe-instances --filters "Name=instance-state-name,Values=running,stopped" --query "Reservations[*].Instances[*].{Instance:InstanceId,State:State.Name}" | jq '. | length')
 
 if [[ $INS_NUM -eq 0 ]]; then 
 
 	# THIS CONDITION IS FOR NEW INSTANCE CREATION FROM SCRATCH 
-	
+
+	echo "INFO ################### THERE ARE NO RUNNING OR STOPPED INSTANCES CURRENT IN YOUR AWS EC2"
 	newIns
 
+	echo "INFO ################### WAITING FOR INSTACE TO BE IN RUNNING STATE"
 	# CONTINUE FURTHER ONLY IF THE INTANCE STATE IS IN RUNNING STATE 
 	while true; do
 
@@ -462,19 +562,17 @@ if [[ $INS_NUM -eq 0 ]]; then
 
 else
 
+	echo "INFO ################### THERE ARE $INS_NUM RUNNING OR STOPPED INSTANCES CURRENT IN YOUR AWS EC2"
+
 	TMP_FILE="/tmp/instance_list.json"
 
 	aws ec2 describe-instances | jq '.' > $TMP_FILE
 
-	INS_LEN=$(jq '.Reservations | length' $TMP_FILE)
+	echo "INFO ################### CHECKING FOR CHECKS FOR IP AND KEY-PAIR"
 
-	echo "$INS_LEN"	
-
-
-	for (( i = 0; i < "$INS_LEN"; i++ )); do
+	for (( i = 0; i < "$INS_NUM"; i++ )); do
 
 		if [[ $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"running"' || $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"stopped"' ]]; then
-
 			
 			SEC_ID=$(jq ".Reservations[$i].Instances[].SecurityGroups[].GroupId" $TMP_FILE | cut -d '"' -f2)
 
@@ -484,13 +582,15 @@ else
 
 			IP_V6=$(aws ec2 describe-security-groups --group-ids "$SEC_ID" | jq -r '.SecurityGroups[].IpPermissions[] | select(.IpProtocol=="tcp" and .FromPort==80)' | jq '.Ipv6Ranges[].CidrIpv6')
 
+			INS_ID=$(jq ".Reservations[$i].Instances[].InstanceId" $TMP_FILE)
+			
 			if [[ $IP_V4 == '"0.0.0.0/0"' && $IP_V6 == '"::/0"' ]] && [ -f "/var/$KP_DIR/$INS_KP.pem" ]; then
 
 				if [[ $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"running"' ]]; then
 
-					INS_ID=$(jq ".Reservations[$i].Instances[].InstanceId" $TMP_FILE)
+					echo "INFO ################### FOUND VALID RUNNING INSTANCE"
 
-					processInstallation $INS_ID $INS_KP
+					processInstallation "$INS_ID" "$INS_KP"
 
 				fi
 
@@ -500,5 +600,4 @@ else
 
 	done
 	
-
 fi
