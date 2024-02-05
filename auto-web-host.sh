@@ -496,11 +496,10 @@ rm -rf $(cat $LINK_FILE | cut -d "/" -f5 | cut -d "." -f1)
 
 rm -rf $LINK_FILE
 
-# STORING THE NAME OF WEB-SITE HOSTED IN A TEXT FILE BY EXTRACTING HTML <title> FIELD 
-
-sudo curl -s localhost | htmlq --text title | cut -d "-" -f1 | sudo tee $REM_STATUS_FILE > /dev/null
-
 fi
+
+# STORING THE NAME OF WEB-SITE HOSTED IN A TEXT FILE BY EXTRACTING HTML <title> FIELD 
+sudo curl -s localhost | htmlq --text title | cut -d "-" -f1 | sudo tee $REM_STATUS_FILE > /dev/null
 
 EOF
 
