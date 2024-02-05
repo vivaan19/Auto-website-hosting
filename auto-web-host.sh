@@ -47,11 +47,26 @@ else
 
 	echo "INFO ################### SUCCESS INTERNET IS CONNECTED"
 
+	echo "INFO ################### CHECKING REQUIRED SOFTWARE"
+
 	which jq &> /dev/null
 
 	if [ $? -ne 0 ]; then
 		sudo apt install jq -y
 	fi
+
+	which htmlq &> /dev/null 
+	if [ $? -ne 0 ]; then
+
+		sudo curl -L --output htmlq.tar.gz $HTMLQ_LINK
+
+		sudo tar xf htmlq.tar.gz -C /usr/local/bin
+
+		rm -rf htmlq.tar.gz
+
+	fi
+
+
 
 	# EXPORT YOUR DEFAULT REGION, ACCESS KEY AND SECRET ACCESS KEY IN .profile file 
 	
@@ -89,6 +104,9 @@ TMP_FILE="/tmp/sec-grp.json"
 
 USER="ubuntu" 
 
+REM_STATUS_FILE="/opt/build_file.txt"
+
+HTMLQ_LINK="https://github.com/mgdm/htmlq/releases/latest/download/htmlq-x86_64-linux.tar.gz"
 
 #######################################################################
 
@@ -339,7 +357,7 @@ newIns() {
 processInstallation() {
 
 
-	echo "INFO ################### PROCESS INSTALLATION STARTING"
+	echo "INFO ################### INSTALLATION PROCESS STARTING"
 
 	FOR_INS_ID=$(echo "$1" | cut -d '"' -f2)
 
@@ -362,15 +380,15 @@ while true; do
 
     ENTER WHICH WEBSITE TO HOST :::
 
-    PRESS 1 TO CAFE WEBSITE
+    PRESS 1 TO BARISTA CAFE (YOUR CAFE TYPE WEBSITE)
 
-    PRESS 2 TO MINI FINANCE
+    PRESS 2 TO MINI FINANCE (YOUR MINI CAFE WEBSITE)
 
-    PRESS 3 TO WEDDING LITE
+    PRESS 3 TO WEDDING LITE (YOUR WEDDING TYPE)
 
-    PRESS 4 TO MOSO INTERIOR
+    PRESS 4 TO MOSO INTERIOR (YOUR INTERIOR BUISNESS)
 
-    PRESS 5 TO JOB SEARCH
+    PRESS 5 TO JOB SEARCH (SOME JOB-SEARCH WEBSITE)
 
 EOF
 
@@ -416,7 +434,7 @@ cat << EOF > $BASH_FILE
 
 #!/bin/bash
 
-if [ -e /opt/build_file.txt ]; then
+if [ -e $REM_STATUS_FILE ]; then
 
 # MAIN PROCESS 
 
@@ -450,6 +468,14 @@ sudo systemctl start apache2
 
 sudo systemctl enable apache2
 
+# SOFTWARE INSTALLATION - HTMLQ TO EXTRACT TEXT FROM HTML TEMPLATES 
+
+sudo curl -L --output htmlq.tar.gz $HTMLQ_LINK
+
+sudo tar xf htmlq.tar.gz -C /usr/local/bin
+
+rm -rf htmlq.tar.gz
+
 # MAIN PROCESS 
 
 curl -O $(cat $LINK_FILE)
@@ -470,7 +496,9 @@ rm -rf $(cat $LINK_FILE | cut -d "/" -f5 | cut -d "." -f1)
 
 rm -rf $LINK_FILE
 
-touch /opt/build_file.txt
+# STORING THE NAME OF WEB-SITE HOSTED IN A TEXT FILE BY EXTRACTING HTML <title> FIELD 
+
+sudo curl -s localhost | htmlq --text title | cut -d "-" -f1 | sudo tee $REM_STATUS_FILE > /dev/null
 
 fi
 
@@ -520,8 +548,44 @@ sudo chmod u+x $BASH_FILE
 EOF
 
 	PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$FOR_INS_ID" | jq '.Reservations[].Instances[].PublicIpAddress')
+	
+	# STATUS_CODE=$(curl -s -I "$PUBLIC_IP" | awk 'NR==1{print $2}' &> /dev/null)
 
-	echo "INFO ################### PLEASE ACCESS YOUR WEBSITE AT - $PUBLIC_IP"
+	# IMPLEMENT LOGIC MATCH THE TITLE OF THE HTML WEBSITE WITH THE /OPT/BUILT_FILE.TXT 
+	# IF THEY BOTH MATCHES THEN THEY ARE 101% CORRECT WEBSITE HOSTED 
+
+
+	echo "INFO ################### SUCESS !!! PLEASE ACCESS YOUR WEBSITE AT - $PUBLIC_IP"
+
+
+
+}
+
+
+checkIfWebHosted() {
+
+	# check for any website hosted in this instance 
+	# parameters :: 1-keypath ; 2-user ; 3-host ; 4-public ip
+
+	sudo ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i "$1" "$2"@"$3" << EOF > /dev/null 2>&1 
+
+	if [ ! -f $REM_STATUS_FILE ]; then 
+		exit 101
+	fi
+
+EOF
+
+	STATUS_FLAG="NO"
+	if [ $? -eq 0 ]; then
+
+		# YES WEBSITE IS HOSTED IN THE INSTANCE 
+		# FIND THE NAME OF THE WEBSITE HOSTED USING PUBLIC IP ADDRESS 
+
+		STATUS_FLAG="YES"
+
+		WEBSITE_NAME=$(curl -s "$4" | htmlq --text title | cut -d "-" -f1 | tr '[:lower:]' '[:upper:]')
+
+	fi
 
 }
 
@@ -545,6 +609,7 @@ if [[ $INS_NUM -eq 0 ]]; then
 	newIns
 
 	echo "INFO ################### WAITING FOR INSTACE TO BE IN RUNNING STATE"
+	
 	# CONTINUE FURTHER ONLY IF THE INTANCE STATE IS IN RUNNING STATE 
 	while true; do
 
@@ -564,39 +629,109 @@ else
 
 	echo "INFO ################### THERE ARE $INS_NUM RUNNING OR STOPPED INSTANCES CURRENT IN YOUR AWS EC2"
 
+	: '
+		0. LIST ALL ACTIVE AND STOPPED INSTANCE
+		1, CHOOSE WHICH INSTANCE TO SELECT 
+		2. CHECK IF THAT INSTANCE HAS APACHE SERVICE HOSTED AND WEBSITE RUNNING 
+		3. ASK USER TO RE-HOST SOME OTHER WEBSITE ; IF YES THEN CONTINUE PROCESS INSTALLATION PROCESS ; IF NOT THEN SPIT OUT PUBLIC IP 
+		4. THEN CHECK IF THAT INSTACE WAS RUNNING OR STOPPED ; IF STOPPED THEN PROMT USER IF HE WANTS TO RUN ; IF YES THEN 
+
+	'
+
+	: '
+
+		MEANING OF VALID INSTANCE : THAT INSTANCE WHICH HAS IPV4/V6 EVERYWHERE AND KEY-PAIR IS PRESENT IN THE SYSTEM 
+		
+		OS DEPENDENT - Ubuntu 22.04 
+
+
+	'
+
 	TMP_FILE="/tmp/instance_list.json"
 
 	aws ec2 describe-instances | jq '.' > $TMP_FILE
 
-	echo "INFO ################### CHECKING FOR CHECKS FOR IP AND KEY-PAIR"
+	echo "INFO ################### CHECKING FOR VALID INSTANCES ...."
 
 	for (( i = 0; i < "$INS_NUM"; i++ )); do
-
-		if [[ $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"running"' || $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"stopped"' ]]; then
 			
-			SEC_ID=$(jq ".Reservations[$i].Instances[].SecurityGroups[].GroupId" $TMP_FILE | cut -d '"' -f2)
+		SEC_ID=$(jq ".Reservations[$i].Instances[].SecurityGroups[].GroupId" $TMP_FILE | cut -d '"' -f2)
 
-			INS_KP=$(jq ".Reservations[$i].Instances[].KeyName" $TMP_FILE | cut -d '"' -f2)
+		INS_KP=$(jq ".Reservations[$i].Instances[].KeyName" $TMP_FILE | cut -d '"' -f2)
 
-			IP_V4=$(aws ec2 describe-security-groups --group-ids "$SEC_ID" | jq -r '.SecurityGroups[].IpPermissions[] | select(.IpProtocol=="tcp" and .FromPort==80)' | jq '.IpRanges[].CidrIp')
+		IP_V4=$(aws ec2 describe-security-groups --group-ids "$SEC_ID" | jq -r '.SecurityGroups[].IpPermissions[] | select(.IpProtocol=="tcp" and .FromPort==80)' | jq '.IpRanges[].CidrIp')
 
-			IP_V6=$(aws ec2 describe-security-groups --group-ids "$SEC_ID" | jq -r '.SecurityGroups[].IpPermissions[] | select(.IpProtocol=="tcp" and .FromPort==80)' | jq '.Ipv6Ranges[].CidrIpv6')
+		IP_V6=$(aws ec2 describe-security-groups --group-ids "$SEC_ID" | jq -r '.SecurityGroups[].IpPermissions[] | select(.IpProtocol=="tcp" and .FromPort==80)' | jq '.Ipv6Ranges[].CidrIpv6')
 
-			INS_ID=$(jq ".Reservations[$i].Instances[].InstanceId" $TMP_FILE)
+		INS_ID=$(jq ".Reservations[$i].Instances[].InstanceId" $TMP_FILE)
+
+		AMI_IMG=$(jq ".Reservations[$i].Instances[].ImageId" $TMP_FILE)
+		
+		if [[ $IP_V4 == '"0.0.0.0/0"' && $IP_V6 == '"::/0"' && $AMI_IMG == '"ami-0c7217cdde317cfec"' ]] && [ -f "/var/$KP_DIR/$INS_KP.pem" ]; then
+
+			echo "INFO ################### FOUND VALID INSTANCE"
+			echo "INFO ################### CHECKING IF ANY WEBSITE IS HOSTED IN THIS INSTACE"
+
+			HOST=$(jq ".Reservations[$i].Instances[].PublicDnsName" $TMP_FILE | cut -d '"' -f2)
 			
-			if [[ $IP_V4 == '"0.0.0.0/0"' && $IP_V6 == '"::/0"' ]] && [ -f "/var/$KP_DIR/$INS_KP.pem" ]; then
+			KEY=/var/$KP_DIR/$INS_KP.pem
+			
+			PUBLIC_IP=$(jq ".Reservations[$i].Instances[].PublicIpAddress" $TMP_FILE | cut -d '"' -f2)
 
-				if [[ $(jq ".Reservations[$i].Instances[].State.Name" $TMP_FILE) == '"running"' ]]; then
 
-					echo "INFO ################### FOUND VALID RUNNING INSTANCE"
+			# WEBSITE CHECK START 
+			
+			checkIfWebHosted "$KEY" $USER "$HOST" "$PUBLIC_IP"
+			
+			# WEBSITE CHECK DONE 
 
-					processInstallation "$INS_ID" "$INS_KP"
+			if [ $STATUS_FLAG == "YES" ]; then 
 
-				fi
+				echo "INFO ################### $WEBSITE_NAME WEBSITE IS HOSTED AT $PUBLIC_IP"
 
-			fi	
+				while true; do 
 
-		fi
+		echo -e "
+			
+		PRESS 1 TO RE-HOST WITH SOME OTHER WEBSITE \n  
+		PRESS 2 TO MAKE ANOTHER WEB-SITE WITH NEW INSTANCE \n  
+		PRESS 3 TO DO-NOTHING \n  
+
+		"
+					read -p "ENTER YOUR CHOICE (1-3): " input 
+
+					case $input in
+
+						1)
+						
+            				echo "INFO ################### RE-HOSTING PROCESS BEGGINNING .... "
+							processInstallation "$INS_ID" "$INS_KP"
+							break 
+							;;
+
+						2)
+
+
+							newIns
+							break 
+							;;
+						
+						3)
+
+							echo "INFO ################### $WEBSITE_NAME WEBSITE IS HOSTED AT $PUBLIC_IP"
+							break
+							;;
+
+						*)
+            				echo "WARNING ################### INVALID CHOICE. PLEASE ENTER A NUMBER BETWEEN 1 AND 3."
+					
+					esac
+
+				done
+			
+			fi
+		
+		fi	
 
 	done
 	
