@@ -470,11 +470,17 @@ sudo systemctl enable apache2
 
 # SOFTWARE INSTALLATION - HTMLQ TO EXTRACT TEXT FROM HTML TEMPLATES 
 
+which htmlq 
+
+if [ $? -ne 0 ]; then
+
 sudo curl -L --output htmlq.tar.gz $HTMLQ_LINK
 
 sudo tar xf htmlq.tar.gz -C /usr/local/bin
 
 rm -rf htmlq.tar.gz
+
+fi
 
 # MAIN PROCESS 
 
@@ -544,6 +550,8 @@ sudo ssh -o BatchMode=yes -o StrictHostKeyChecking=no -i "$KEY" $USER@"$HOST" <<
 sudo chmod u+x $BASH_FILE
 ./$BASH_FILE
 
+sudo rm -rf $BASH_FILE
+
 EOF
 
 	PUBLIC_IP=$(aws ec2 describe-instances --instance-ids "$FOR_INS_ID" | jq '.Reservations[].Instances[].PublicIpAddress')
@@ -554,7 +562,7 @@ EOF
 	# IF THEY BOTH MATCHES THEN THEY ARE 101% CORRECT WEBSITE HOSTED 
 
 
-	echo "INFO ################### SUCESS !!! PLEASE ACCESS YOUR WEBSITE AT - $PUBLIC_IP"
+	echo "INFO ################### SUCCESS !!! PLEASE ACCESS YOUR WEBSITE AT - $PUBLIC_IP"
 
 
 
@@ -686,7 +694,7 @@ else
 
 			if [ $STATUS_FLAG == "YES" ]; then 
 
-				echo "INFO ################### $WEBSITE_NAME WEBSITE IS HOSTED AT $PUBLIC_IP"
+				echo "INFO ################### ${WEBSITE_NAME}WEBSITE IS HOSTED AT $PUBLIC_IP"
 
 				while true; do 
 
